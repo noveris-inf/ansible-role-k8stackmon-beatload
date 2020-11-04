@@ -1,0 +1,307 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beatload-dp
+  namespace: {{ beatload_namespace }}
+  labels:
+    app: beatload-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: beatload-app
+  template:
+    metadata:
+      namespace: {{ beatload_namespace }}
+      annotations:
+        triggerHash: "{{ trigger_sha_sum['stat']['checksum'] }}"
+      labels:
+        app: beatload-app
+    spec:
+{% if beatload_tolerate_master | default(false) %}
+      tolerations:
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+{% endif %}
+      volumes:
+        - name: beatload-beat-config
+          configMap:
+            name: beatload-beat-config
+        - name: beatload-cert
+          secret:
+            secretName: beatload-cert
+      initContainers:
+        - name: conn-check
+          image: curlimages/curl
+          command: [ 'sh' ]
+          args:
+            - "/conn-check.sh"
+          env:
+            - name: ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-beat-config
+              mountPath: /conn-check.sh
+              subPath: conn-check.sh
+        - name: ilm-setup
+          image: curlimages/curl
+          command: [ 'sh' ]
+          args:
+            - "/ilm-setup.sh"
+          env:
+            - name: ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-beat-config
+              mountPath: /ilm-setup.sh
+              subPath: ilm-setup.sh
+{% for filebeat_version in beatload_filebeat_versions %}
+        - name: filebeat-load-{{ filebeat_version | replace(".", "-") }}
+          image: docker.elastic.co/beats/filebeat:{{ filebeat_version }}
+          command: [ '/usr/share/filebeat/filebeat' ]
+          args:
+            - "setup"
+            - "--pipelines"
+            - "--index-management"
+            - "-e"
+          env:
+            - name: BEATLOAD_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: BEATLOAD_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: BEATLOAD_KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: BEATLOAD_KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-cert
+              mountPath: /usr/share/filebeat/certs
+            - name: beatload-beat-config
+              mountPath: /usr/share/filebeat/filebeat.yml
+              subPath: filebeat.yml
+{% endfor %}
+{% if beatload_filebeat_dashboard_version is defined %}
+        - name: filebeat-load-dashboard
+          image: docker.elastic.co/beats/filebeat:{{ beatload_filebeat_dashboard_version }}
+          command: [ '/usr/share/filebeat/filebeat' ]
+          args:
+            - "setup"
+            - "--dashboards"
+            - "-e"
+          env:
+            - name: BEATLOAD_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: BEATLOAD_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: BEATLOAD_KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: BEATLOAD_KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-cert
+              mountPath: /usr/share/filebeat/certs
+            - name: beatload-beat-config
+              mountPath: /usr/share/filebeat/filebeat.yml
+              subPath: filebeat.yml
+{% endif %}
+{% for metricbeat_version in beatload_metricbeat_versions %}
+        - name: metricbeat-load-{{ metricbeat_version | replace(".", "-") }}
+          image: docker.elastic.co/beats/metricbeat:{{ metricbeat_version }}
+          command: [ '/usr/share/metricbeat/metricbeat' ]
+          args:
+            - "setup"
+            - "--pipelines"
+            - "--index-management"
+            - "-e"
+          env:
+            - name: BEATLOAD_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: BEATLOAD_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: BEATLOAD_KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: BEATLOAD_KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-cert
+              mountPath: /usr/share/metricbeat/certs
+            - name: beatload-beat-config
+              mountPath: /usr/share/metricbeat/metricbeat.yml
+              subPath: metricbeat.yml
+{% endfor %}
+{% if beatload_metricbeat_dashboard_version is defined %}
+        - name: metricbeat-load-dashboard
+          image: docker.elastic.co/beats/metricbeat:{{ beatload_metricbeat_dashboard_version }}
+          command: [ '/usr/share/metricbeat/metricbeat' ]
+          args:
+            - "setup"
+            - "--dashboards"
+            - "-e"
+          env:
+            - name: BEATLOAD_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: BEATLOAD_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: BEATLOAD_KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: BEATLOAD_KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-cert
+              mountPath: /usr/share/metricbeat/certs
+            - name: beatload-beat-config
+              mountPath: /usr/share/metricbeat/metricbeat.yml
+              subPath: metricbeat.yml
+{% endif %}
+{% for auditbeat_version in beatload_auditbeat_versions %}
+        - name: auditbeat-load-{{ auditbeat_version | replace(".", "-") }}
+          image: docker.elastic.co/beats/auditbeat:{{ auditbeat_version }}
+          command: [ '/usr/share/auditbeat/auditbeat' ]
+          args:
+            - "setup"
+            - "--pipelines"
+            - "--index-management"
+            - "-e"
+          env:
+            - name: BEATLOAD_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: BEATLOAD_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: BEATLOAD_KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: BEATLOAD_KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-cert
+              mountPath: /usr/share/auditbeat/certs
+            - name: beatload-beat-config
+              mountPath: /usr/share/auditbeat/auditbeat.yml
+              subPath: auditbeat.yml
+{% endfor %}
+{% if beatload_auditbeat_dashboard_version is defined %}
+        - name: auditbeat-load-dashboard
+          image: docker.elastic.co/beats/auditbeat:{{ beatload_auditbeat_dashboard_version }}
+          command: [ '/usr/share/auditbeat/auditbeat' ]
+          args:
+            - "setup"
+            - "--dashboards"
+            - "-e"
+          env:
+            - name: BEATLOAD_ELASTIC_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: user
+            - name: BEATLOAD_ELASTIC_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-elastic-cred
+                  key: pass
+            - name: BEATLOAD_KIBANA_USER
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: user
+            - name: BEATLOAD_KIBANA_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: beatload-kibana-cred
+                  key: pass
+          volumeMounts:
+            - name: beatload-cert
+              mountPath: /usr/share/auditbeat/certs
+            - name: beatload-beat-config
+              mountPath: /usr/share/auditbeat/auditbeat.yml
+              subPath: auditbeat.yml
+{% endif %}
+      containers:
+        - name: pause
+          image: gcr.io/google_containers/pause

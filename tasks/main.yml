@@ -1,0 +1,44 @@
+---
+
+- name: Create beatload config directory
+  command: "mkdir -p {{ beatload_config_dir }}"
+
+- name: beatload location
+  file:
+    state: directory
+    path: "{{ beatload_config_dir }}"
+    owner: "root"
+    group: "root"
+    mode: 0755
+
+- name: Read CA file
+  slurp:
+    src: "{{ beatload_ca_file }}"
+  register: beatload_ca_data
+
+- name: Copy beatload triggers
+  template:
+    src: beatload_triggers.yml.j2
+    dest: "{{ beatload_config_dir }}/beatload_triggers.yml"
+    owner: root
+    group: root
+    mode: 0640
+
+- name: Get trigger SHA sum
+  stat:
+    checksum_algorithm: sha256
+    path: "{{ beatload_config_dir }}/beatload_triggers.yml"
+  register: trigger_sha_sum
+
+- name: Copy beatload config
+  template:
+    src: beatload.yml.j2
+    dest: "{{ beatload_config_dir }}/beatload.yml"
+    owner: root
+    group: root
+    mode: 0640
+
+- name: Apply beatload resources
+  command: "kubectl apply -f {{ beatload_config_dir }}/beatload_triggers.yml -f {{ beatload_config_dir }}/beatload.yml"
+
+...

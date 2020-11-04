@@ -1,0 +1,21 @@
+---
+
+beatload_namespace: "{{ kubernetes_namespace | default('default') }}"
+beatload_config_dir: "{{ kubernetes_namespace_dir }}/beatload"
+beatload_tolerate_master: false
+beatload_filebeat_versions:
+  - "7.9.0"
+  - "7.9.2"
+beatload_auditbeat_versions:
+  - "7.9.0"
+  - "7.9.2"
+beatload_metricbeat_versions:
+  - "7.9.0"
+#beatload_filebeat_dashboard_version: "7.9.2"
+#beatload_auditbeat_dashboard_version: "7.9.2"
+#beatload_metricbeat_dashboard_version: "7.9.2"
+#beatload_ca_file:
+#beatload_elastic_user:
+#beatload_elastic_pass:
+
+...
